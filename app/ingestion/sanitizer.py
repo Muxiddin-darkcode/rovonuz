@@ -4,6 +4,7 @@ Handles Cyrillic <-> Latin transliteration, advertising removal, and content has
 """
 
 import hashlib
+import html
 import re
 from typing import Tuple
 
@@ -369,55 +370,77 @@ def format_telegram_post(headline: str, body: str) -> str:
     """
     Formats headline and body into professional Kun.uz / Zamon.uz Telegram channel format.
     Ensures:
-    1. Punchy bold headline at top: **Sarlavha**
-    2. Zero headline repetition: If the opening sentence of body repeats the headline
-       or shares 3+ keywords with it, it is cleanly removed so the narrative flows naturally.
-    3. Proper paragraph separation and 2026 New Uzbek Latin Alphabet (Ö, Ğ, Ş, Ç).
-    4. Clean ROVON.UZ branding footer: 🔗 @rovonuz — Voqealar ravon, axborot aniq.
+    1. HTML bold headline: <b>Sarlavha</b> (strictly eliminates raw ** asterisks forever).
+    2. Strips surrounding quotes or markdown from headline.
+    3. Zero headline repetition in body lead.
+    4. Compact, readable length: 2-3 essential sentences (max 450 characters) so it never
+       dumps giant blocks of text or overflows Telegram's 1024-char photo caption limit.
+    5. Clean ROVON.UZ branding footer: 🔗 @rovonuz — Voqealar ravon, axborot aniq.
     """
     headline = (headline or "").strip()
     headline = convert_to_new_uzbek_alphabet(headline)
-    # Strip any markdown bold/italic or hashtags from headline
+    # Strip any markdown bold/italic/hashtags or surrounding quotation marks from headline
     headline = re.sub(r'[*_#]', '', headline).strip()
+    headline = re.sub(r'^["“«\'ʻ‘`]+|["”»\'ʻ‘`]+$', '', headline).strip()
 
     body = (body or "").strip()
-    # Remove any existing footers or hashtags to avoid duplicate mentions
+    # Remove any existing footers, hashtags, or broken markdown tags
     body = re.sub(r'(?i)\n*🔗\s*@rovonuz[^\n]*', '', body)
     body = re.sub(r'(?i)\n*#rovon_uz\b[^\n]*', '', body)
+    body = re.sub(r'(?i)ℹ️\s*_[^_]+_', '', body)
+    body = re.sub(r'[*_#]', '', body)
     body = convert_to_new_uzbek_alphabet(body).strip()
 
     # Paragraphs breakdown
-    paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
+    raw_paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
 
     # Extract clean keywords from headline (words > 3 chars)
     hl_words = [w.lower() for w in re.sub(r'[^\w\s]', '', headline.lower()).split() if len(w) > 3]
 
-    clean_paragraphs = []
+    clean_sentences = []
     dropped_lead = False
 
-    for i, para in enumerate(paragraphs):
-        # Check first paragraph for duplicate lead sentence
-        if i == 0 and hl_words:
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) > 5]
-            clean_sents = []
-            for s_idx, sent in enumerate(sentences):
-                if s_idx == 0 and not dropped_lead:
-                    sent_words = [w.lower() for w in re.sub(r'[^\w\s]', '', sent.lower()).split() if len(w) > 3]
-                    overlap = sum(1 for w in hl_words if w in sent_words)
-                    # If sentence 0 shares >= 2 significant words or >= 35% of headline words, drop it
-                    if overlap >= 2 or (len(hl_words) > 0 and (overlap / len(hl_words)) >= 0.35):
-                        dropped_lead = True
-                        continue
-                clean_sents.append(sent)
-            if clean_sents:
-                clean_paragraphs.append(" ".join(clean_sents))
-        else:
-            clean_paragraphs.append(para)
+    for para in raw_paragraphs:
+        sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) > 10]
+        for sent in sents:
+            sent_clean = re.sub(r'^ℹ️\s*', '', sent).strip()
+            # If opening sentence repeats headline, cleanly omit it
+            if not dropped_lead and hl_words:
+                sent_words = [w.lower() for w in re.sub(r'[^\w\s]', '', sent_clean.lower()).split() if len(w) > 3]
+                overlap = sum(1 for w in hl_words if w in sent_words)
+                if overlap >= 2 or (len(hl_words) > 0 and (overlap / len(hl_words)) >= 0.35):
+                    dropped_lead = True
+                    continue
+            clean_sentences.append(sent_clean)
 
-    clean_body = "\n\n".join(clean_paragraphs).strip()
-    if not clean_body or len(clean_body) < 15:
-        clean_body = body
+    # Compact selection: Target 250 - 450 characters (max 2-3 sentences)
+    selected_sentences = []
+    current_len = 0
+
+    for s in clean_sentences:
+        if not s:
+            continue
+        if current_len + len(s) <= 450 or len(selected_sentences) < 2:
+            selected_sentences.append(s)
+            current_len += len(s)
+        else:
+            break
+
+    if not selected_sentences:
+        selected_sentences = clean_sentences[:2] if clean_sentences else [body[:300]]
+
+    # Format into 1 or 2 clean paragraphs
+    if len(selected_sentences) >= 3:
+        clean_body = f"{selected_sentences[0]}\n\n" + " ".join(selected_sentences[1:])
+    elif len(selected_sentences) == 2:
+        clean_body = f"{selected_sentences[0]}\n\n{selected_sentences[1]}"
+    else:
+        clean_body = selected_sentences[0]
+
+    # HTML escape with quote=False so Uzbek apostrophes (') are preserved
+    escaped_headline = html.escape(headline, quote=False)
+    escaped_body = html.escape(clean_body, quote=False)
 
     footer = "🔗 @rovonuz — Voqealar ravon, axborot aniq."
-    return f"**{headline}**\n\n{clean_body}\n\n{footer}"
+    return f"<b>{escaped_headline}</b>\n\n{escaped_body}\n\n{footer}"
 

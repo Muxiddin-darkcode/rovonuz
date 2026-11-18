@@ -1023,15 +1023,17 @@ async def execute_dispatch_top(target, is_callback=False):
                         chat_id=channel_id,
                         photo=photo,
                         caption=post_text[:1024],
-                        parse_mode=ParseMode.MARKDOWN,
+                        parse_mode=ParseMode.HTML,
                         reply_markup=channel_btn
                     )
-                except Exception:
+                except Exception as send_err:
+                    print(f"[Dispatch HTML send error] {send_err}, trying plain text fallback...", flush=True)
                     photo = FSInputFile(card_path)
+                    clean_plain = re.sub(r'<[^>]+>', '', post_text)[:1024]
                     await bot.send_photo(
                         chat_id=channel_id,
                         photo=photo,
-                        caption=post_text[:1024],
+                        caption=clean_plain,
                         parse_mode=None,
                         reply_markup=channel_btn
                     )
@@ -1039,15 +1041,16 @@ async def execute_dispatch_top(target, is_callback=False):
                 try:
                     await bot.send_message(
                         chat_id=channel_id,
-                        text=post_text,
-                        parse_mode=ParseMode.MARKDOWN,
+                        text=post_text[:4096],
+                        parse_mode=ParseMode.HTML,
                         reply_markup=channel_btn,
                         disable_web_page_preview=False
                     )
                 except Exception:
+                    clean_plain = re.sub(r'<[^>]+>', '', post_text)[:4096]
                     await bot.send_message(
                         chat_id=channel_id,
-                        text=post_text,
+                        text=clean_plain,
                         parse_mode=None,
                         reply_markup=channel_btn,
                         disable_web_page_preview=False

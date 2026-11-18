@@ -84,22 +84,26 @@ class RovonEditor:
         if not body_sentences:
             body_sentences = sentences
 
-        lead = body_sentences[0] if body_sentences else headline
-        body_middle = " ".join(body_sentences[1:3]) if len(body_sentences) > 1 else ""
-        conclusion = body_sentences[3] if len(body_sentences) > 3 else ""
+        # Select concise sentences for compact body (target: 200 - 380 chars)
+        selected = []
+        c_len = 0
+        for s in body_sentences:
+            s_clean = s.strip()
+            if c_len + len(s_clean) <= 380 or len(selected) < 1:
+                selected.append(s_clean)
+                c_len += len(s_clean)
+            else:
+                break
 
-        # Construct clean journalistic post (ONE headline at the top, clean body paragraphs)
-        post_lines = [
-            f"{lead}",
-        ]
-        if body_middle:
-            post_lines.extend(["", f"{body_middle}"])
-        if conclusion:
-            post_lines.extend(["", f"ℹ️ _{conclusion}_"])
+        if not selected:
+            selected = body_sentences[:2] if body_sentences else [headline]
 
-        post_lines.extend(["", "🔗 @rovonuz — Voqealar ravon, axborot aniq."])
+        if len(selected) >= 2:
+            body_formatted = f"{selected[0]}\n\n" + " ".join(selected[1:])
+        else:
+            body_formatted = selected[0]
 
-        telegram_text = "\n".join(post_lines)
+        telegram_text = f"{body_formatted}\n\n🔗 @rovonuz — Voqealar ravon, axborot aniq."
 
         # Convert all texts to the NEW Uzbek Latin Alphabet (Ö, Ğ, Ş, Ç)
         headline = convert_to_new_uzbek_alphabet(headline)
@@ -143,11 +147,11 @@ Sen ROVON.UZ ning yetakchi Bosh Muharriri (AI-3: EDITOR)san. Uslubing — Kun.uz
 QAT'IY QOIDALAR:
 1. ZERO DISTORTION: Birorta raqam, ism, joy yoki sanani O'ZGARTIRMA, yangi fakt to'qima.
 2. YANGI O'ZBEK LOTIN ALIFBOSI (2026): Barcha matnlarni qat'iy ravishda Yangi Lotin alifbosida (Ö ö, Ğ ğ, Ş ş, Ç ç) yoz. Eskirgan Sh, Ch, O', G' larni umuman ishlatma!
-3. KUN.UZ / ZAMON USLUBIDAGI SARLAVHA: Sarlavha qisqa (max 70 belgi), jozibador va voqea mohiyatini ochuvchi bo'lsin. Byurokratik rasmiyatchilik, ota ismlari yoki "to'g'risida" kabi so'zlarni sarlavhaga qo'yma!
-4. MATN STRUKTURASI (Zero Repetition):
+3. KUN.UZ / ZAMON USLUBIDAGI SARLAVHA: Sarlavha qisqa (max 70 belgi), jozibador va voqea mohiyatini ochuvchi bo'lsin. Byurokratik rasmiyatchilik, ota ismlari yoki "to'g'risida" kabi so'zlarni sarlavhaga qo'yma! Sarlavha atrofida qo'shtirnoq qo'yma!
+4. IXCHAM VA RAVON MATN (Juda ko'p matn yozma! Max 350-450 belgi):
    - 1-abzats: Lead (voqeaning asosiy mohiyati: nima bo'ldi, qayerda bo'ldi). SARLAVHANI AYNAN TAKRORLAMA!
-   - 2-abzats: Tafsilotlar (sabablar, rasmiy idora bayonoti, raqamlar yoki statistika).
-   - 3-abzats: Xulosa yoki oqibati.
+   - 2-abzats: Muhim tafsilot (1-2 ta eng asosiy raqam yoki xulosasi).
+   - Hech qachon cho'zib, rasmiyatchilik qilib ulkan matn yozma. Odamlar telefonda 2-3 jumlada tushunsin.
    - Oxirgi qatorda: "🔗 @rovonuz — Voqealar ravon, axborot aniq." bo'lsin.
 5. Hech qanday emoji spam (masalan: 😎 yoki ❗️ ketma-ketligi) yoki ortiqcha heshteg qo'shma.
 6. headline_alternatives: 3 ta sifatli sarlavha varianti.
