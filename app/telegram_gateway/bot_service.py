@@ -1136,7 +1136,8 @@ async def cb_handle_audit(callback: CallbackQuery):
                 if res.get("status") == "scheduled":
                     await safe_answer_callback(callback, "✅ Xabar ma'qullandi va nashr navbatiga qo'yildi!", show_alert=True)
                 else:
-                    await safe_answer_callback(callback, f"⚠️ Xatolik: {res.get('message', 'Noma\'lum')}", show_alert=True)
+                    err_msg = res.get("message", "Noma'lum")
+                    await safe_answer_callback(callback, f"⚠️ Xatolik: {err_msg}", show_alert=True)
             except Exception as e:
                 print(f"[Audit Approval Error] {e}", flush=True)
                 await safe_answer_callback(callback, f"❌ Xatolik yuz berdi: {str(e)[:60]}", show_alert=True)
