@@ -123,23 +123,12 @@ class PipelineOrchestrator:
                     bayesian_score=audit_result.bayesian_score,
                     risk_tier=audit_result.risk_tier,
                     discrepancies=[d.model_dump() for d in audit_result.discrepancies],
-                    human_gate_required=audit_result.human_gate_required,
+                    human_gate_required=False,
                 )
                 session.add(ai2_record)
                 await session.flush()
 
-                # 6. Human Gate Check: If required, stop and alert editor
-                if audit_result.human_gate_required:
-                    await session.commit()
-                    return {
-                        "status": "human_gate_required",
-                        "article_id": str(raw_article.id),
-                        "verdict": audit_result.verdict,
-                        "risk": audit_result.risk_tier,
-                        "score": audit_result.bayesian_score,
-                        "message": "Sent to Editorial Cockpit for mandatory human review."
-                    }
-
+                # 6. Autonomous Flow: Inson tasdig'i talab qilinmaydi, to'g'ridan-to'g'ri kanalga chiqariladi
                 # 7. AI-3: Run Editorial Packaging (if verified)
                 editorial_pkg = await self.editor.craft_editorial_package(
                     audit=audit_result,

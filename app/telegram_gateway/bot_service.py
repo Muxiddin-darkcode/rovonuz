@@ -105,6 +105,17 @@ async def safe_edit_target(target: Any, text: str, reply_markup=None):
         return await safe_reply(target, text, reply_markup=reply_markup)
 
 
+async def safe_answer_callback(callback: CallbackQuery, text: str = None, show_alert: bool = False):
+    """Safely answers a CallbackQuery, ignoring timeouts/expired query exceptions."""
+    try:
+        if text:
+            await callback.answer(text, show_alert=show_alert)
+        else:
+            await callback.answer()
+    except Exception:
+        pass
+
+
 # ==============================================================================
 # KEYBOARDS (DOIMIY VA INLINE TUGMALAR)
 # ==============================================================================
@@ -435,8 +446,8 @@ async def send_audits_view(target, is_callback=False):
         )
         text = (
             "⚖️ **INSON TASDIG'I MARKAZI (Editorial Gates):**\n\n"
-            "✅ Hozirda inson tasdig'ini kutayotgan xatarli yoki ziddiyatli xabarlar yo'q.\n"
-            "Barcha tekshirilgan xabarlar avtomatik nashr navbatiga o'tgan."
+            "✅ Hozirda inson tasdig'ini kutayotgan xabarlar yo'q.\n"
+            "⚡ **Tizim 100% to'liq avtonom rejimda:** barcha yangiliklar hech qanday inson tasdig'isiz, avtomatik ravishda go'zal karta va matn bilan to'g'ridan-to'g'ri kanalga chiqarilmoqda."
         )
         if is_callback:
             await safe_edit_target(target, text, reply_markup=no_audit_kb)
@@ -1113,25 +1124,25 @@ async def cb_handle_audit(callback: CallbackQuery):
             audit = None
 
         if not audit:
-            await callback.answer("Audit topilmadi!", show_alert=True)
+            await safe_answer_callback(callback, "Audit topilmadi!", show_alert=True)
             return
 
         if "approve" in action:
             try:
                 res = await orchestrator.approve_and_schedule_audit(audit.id)
                 if res.get("status") == "scheduled":
-                    await callback.answer("✅ Xabar ma'qullandi va nashr navbatiga qo'yildi!", show_alert=True)
+                    await safe_answer_callback(callback, "✅ Xabar ma'qullandi va nashr navbatiga qo'yildi!", show_alert=True)
                 else:
-                    await callback.answer(f"⚠️ Xatolik: {res.get('message', 'Noma\'lum')}", show_alert=True)
+                    await safe_answer_callback(callback, f"⚠️ Xatolik: {res.get('message', 'Noma\'lum')}", show_alert=True)
             except Exception as e:
                 print(f"[Audit Approval Error] {e}", flush=True)
-                await callback.answer(f"❌ Xatolik yuz berdi: {str(e)[:60]}", show_alert=True)
+                await safe_answer_callback(callback, f"❌ Xatolik yuz berdi: {str(e)[:60]}", show_alert=True)
         elif "reject" in action:
             audit.human_approved_at = None
             audit.human_gate_required = False
             audit.risk_tier = "REJECTED"
             await session.commit()
-            await callback.answer("❌ Xabar rad etildi va arxivlandi.", show_alert=True)
+            await safe_answer_callback(callback, "❌ Xabar rad etildi va arxivlandi.", show_alert=True)
 
     if action in ["approve", "reject"]:
         await send_audits_view(callback, is_callback=True)

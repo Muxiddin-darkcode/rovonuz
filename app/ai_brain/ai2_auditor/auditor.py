@@ -79,19 +79,12 @@ class RovonAuditor:
 
         risk_tier = self.determine_risk_tier(f"{investigation.original_title} {raw_text}")
 
-        # Autonomous Flow: Official channels pass without human bottleneck unless LEVEL_4_CRITICAL
-        if is_official and not has_discrepancies and not investigation.is_recycled_news:
-            human_gate = (risk_tier == "LEVEL_4_CRITICAL")
-        else:
-            human_gate = (
-                risk_tier in ["LEVEL_3_HIGH", "LEVEL_4_CRITICAL"]
-                or verdict in ["UNCONFIRMED", "CONFLICTING", "FALSE"]
-                or score < 0.70
-            )
+        # 100% Fully Autonomous Flow: Inson tasdig'i olib tashlandi, to'g'ridan-to'g'ri kanalga chiqariladi
+        human_gate = False
 
         summary = (
             f"Fakt tekshiruv yakunlandi: Holati - {verdict} (Bayes ishonch balli: {score}). "
-            f"Xavf darajasi: {risk_tier}. Inson tasdig'i: {'TALAB ETILADI' if human_gate else 'TALAB ETILMAYDI'}."
+            f"Xavf darajasi: {risk_tier}. Inson tasdig'i: TALAB ETILMAYDI (To'liq avtomatik)."
         )
 
         return AuditResult(
