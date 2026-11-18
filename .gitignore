@@ -1,0 +1,48 @@
+# Environment variables & secrets (CRITICAL)
+.env
+*.env
+!.env.example
+
+# Virtual Environment
+venv/
+.venv/
+env/
+ENV/
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Databases
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+rovon_media.db*
+
+# Storage & generated media
+storage/cards/*
+!storage/cards/.gitkeep
+storage/temp/*
+
+# Telegram session files
+*.session
+*.session-journal
+rovon_observer_session.session
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Antigravity / AI local artifacts
+.gemini/
+*.log
