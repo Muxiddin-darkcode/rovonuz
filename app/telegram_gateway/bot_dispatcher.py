@@ -4,6 +4,7 @@ Aiogram 3 gateway to dispatch formatted messages and photos to @rovonuz channel.
 """
 
 import asyncio
+import re
 from typing import Optional
 from aiogram import Bot
 from aiogram.enums import ParseMode
@@ -48,31 +49,63 @@ class TelegramDispatcher:
                 # If image is provided, send as photo with caption
                 if image_path:
                     photo = FSInputFile(image_path)
-                    msg = await bot.send_photo(
-                        chat_id=self.channel_id,
-                        photo=photo,
-                        caption=formatted_text[:1024],  # Telegram caption max length
-                        parse_mode=ParseMode.MARKDOWN,
-                    )
-                    return msg.message_id
+                    try:
+                        msg = await bot.send_photo(
+                            chat_id=self.channel_id,
+                            photo=photo,
+                            caption=formatted_text[:1024],
+                            parse_mode=ParseMode.HTML,
+                        )
+                        return msg.message_id
+                    except Exception:
+                        clean_plain = re.sub(r'<[^>]+>', '', formatted_text)[:1024]
+                        photo = FSInputFile(image_path)
+                        msg = await bot.send_photo(
+                            chat_id=self.channel_id,
+                            photo=photo,
+                            caption=clean_plain,
+                            parse_mode=None,
+                        )
+                        return msg.message_id
                 elif image_url:
                     photo = URLInputFile(image_url)
-                    msg = await bot.send_photo(
-                        chat_id=self.channel_id,
-                        photo=photo,
-                        caption=formatted_text[:1024],
-                        parse_mode=ParseMode.MARKDOWN,
-                    )
-                    return msg.message_id
+                    try:
+                        msg = await bot.send_photo(
+                            chat_id=self.channel_id,
+                            photo=photo,
+                            caption=formatted_text[:1024],
+                            parse_mode=ParseMode.HTML,
+                        )
+                        return msg.message_id
+                    except Exception:
+                        clean_plain = re.sub(r'<[^>]+>', '', formatted_text)[:1024]
+                        photo = URLInputFile(image_url)
+                        msg = await bot.send_photo(
+                            chat_id=self.channel_id,
+                            photo=photo,
+                            caption=clean_plain,
+                            parse_mode=None,
+                        )
+                        return msg.message_id
                 else:
                     # Text only message
-                    msg = await bot.send_message(
-                        chat_id=self.channel_id,
-                        text=formatted_text,
-                        parse_mode=ParseMode.MARKDOWN,
-                        disable_web_page_preview=False,
-                    )
-                    return msg.message_id
+                    try:
+                        msg = await bot.send_message(
+                            chat_id=self.channel_id,
+                            text=formatted_text[:4096],
+                            parse_mode=ParseMode.HTML,
+                            disable_web_page_preview=False,
+                        )
+                        return msg.message_id
+                    except Exception:
+                        clean_plain = re.sub(r'<[^>]+>', '', formatted_text)[:4096]
+                        msg = await bot.send_message(
+                            chat_id=self.channel_id,
+                            text=clean_plain,
+                            parse_mode=None,
+                            disable_web_page_preview=False,
+                        )
+                        return msg.message_id
 
             except TelegramRetryAfter as e:
                 print(f"[Telegram FloodWait] Sleeping for {e.retry_after}s...")
