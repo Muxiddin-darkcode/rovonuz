@@ -49,6 +49,14 @@ class PipelineOrchestrator:
         if not content_hash:
             return {"status": "error", "message": "Missing content_hash"}
 
+        # Check Newsroom Worthiness (Reject bureaucratic PhD notices, tenders, vacancies)
+        from app.ingestion.sanitizer import is_news_worthy
+        title = article_data.get("title", "")
+        body = article_data.get("body_clean", "") or article_data.get("body_raw", "")
+        if not is_news_worthy(title, body):
+            print(f"[Newsroom Filter] Skipped low-value/bureaucratic notice: {title[:60]}")
+            return {"status": "filtered_low_value", "message": "Filtered out non-news notice"}
+
         # 1. Acquire Distributed Lock for Idempotency
         lock_acquired = await event_bus.acquire_lock(f"process:{content_hash}", expire_seconds=300)
         if not lock_acquired:
@@ -155,6 +163,15 @@ class PipelineOrchestrator:
                                 if resp.status_code == 200:
                                     with open(temp_download, "wb") as f:
                                         f.write(resp.content)
+                                    # Validate image: reject tiny passport headshots in favor of cinematic news photos
+                                    try:
+                                        from PIL import Image as PILImage
+                                        with PILImage.open(temp_download) as test_img:
+                                            w, h = test_img.size
+                                            if w < 350 or h > 1.25 * w:
+                                                temp_download = None
+                                    except Exception:
+                                        pass
                                 else:
                                     temp_download = None
                             except Exception:

@@ -54,6 +54,8 @@ from app.ingestion.sanitizer import (
     translate_to_uzbek,
     sanitize_text,
     compute_content_hash,
+    is_news_worthy,
+    format_telegram_post,
 )
 from app.ai_brain.ai1_investigator.investigator import RovonInvestigator
 from app.ai_brain.ai2_auditor.auditor import RovonAuditor
@@ -959,6 +961,13 @@ async def execute_dispatch_top(target, is_callback=False):
         headline = (editorial.headline_selected or "").strip()
         body = (editorial.telegram_clean_text or "").strip()
 
+        # Quality Gate: Drop dissertations, tenders, and bureaucratic spam
+        if not is_news_worthy(headline, body):
+            print(f"[Dispatch Filter] Dropping non-news item: {headline[:60]}", flush=True)
+            item.dispatch_status = "CANCELLED"
+            await session.commit()
+            return await execute_dispatch_top(target, is_callback=is_callback)
+
         # Ensure 100% natural Uzbek language & 2026 New Uzbek Latin Alphabet
         if is_russian_text(headline):
             headline = translate_to_uzbek(headline)
@@ -968,12 +977,8 @@ async def execute_dispatch_top(target, is_callback=False):
         headline = convert_to_new_uzbek_alphabet(headline)
         body = convert_to_new_uzbek_alphabet(body)
 
-        norm_hl = re.sub(r'[*_#]', '', headline).strip().lower()
-        norm_body_start = re.sub(r'[*_#]', '', body[:len(headline) + 25]).strip().lower()
-        if norm_hl and norm_body_start.startswith(norm_hl[:30]):
-            post_text = f"{body}\n\n#ROVON_UZ"
-        else:
-            post_text = f"**{headline}**\n\n{body}\n\n#ROVON_UZ"
+        # Professional Kun.uz / Zamon.uz formatting: Zero headline duplication
+        post_text = format_telegram_post(headline, body)
         channel_id = settings.TELEGRAM_CHANNEL_ID
         channel_btn = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🌐 ROVON.UZ | Rasmiy Sahifa", url="https://rovon.uz")]]

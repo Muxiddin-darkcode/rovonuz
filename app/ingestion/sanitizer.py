@@ -64,6 +64,59 @@ AD_PATTERNS = [
 
 COMPILED_AD_REGEX = [re.compile(p) for p in AD_PATTERNS]
 
+# Patterns for low-value bureaucratic spam (Dissertations, tenders, obituaries)
+UNWANTED_NEWS_PATTERNS = [
+    # Academic & Dissertation Defense notices
+    r"(?i)\bdissertatsiya\b",
+    r"(?i)\bfalsafa\s+doktori\b",
+    r"(?i)\bfanlari\s+doktori\b",
+    r"(?i)\b\(phd\)\b",
+    r"(?i)\b\(dsc\)\b",
+    r"(?i)\bhimoyasi\s+t[oö'ʻ‘`]?g['ʻ‘`]?risida\b",
+    r"(?i)\bhimoyasi\s+haqida\b",
+    r"(?i)\bavtoreferat\b",
+    r"(?i)\bixtisoslik\s+shifri\b",
+    r"(?i)\bilmiy\s+daraja\b",
+    r"(?i)\bдиссертация\b",
+    r"(?i)\bфалсафа\s+доктори\b",
+    r"(?i)\bфанлари\s+доктори\b",
+    r"(?i)\bҳимояси\s+тўғрисида\b",
+
+    # Tenders, Auctions, Vacancies
+    r"(?i)\btender\b",
+    r"(?i)\bdavlat\s+xaridi\b",
+    r"(?i)\bauksion\b",
+    r"(?i)\bbo'?sh\s+ish\s+o'?rni\b",
+    r"(?i)\bvakansiya\b",
+    r"(?i)\bishga\s+taklif\s+etadi\b",
+    r"(?i)\bтендер\b",
+    r"(?i)\bаукцион\b",
+    r"(?i)\bдавлат\s+харид\b",
+
+    # Condolences & routine protocol greetings
+    r"(?i)\bhamdardlik\s+bildir\w*\b",
+    r"(?i)\bnekrolog\b",
+    r"(?i)\btug['ʻ‘`]?ilgan\s+kuni\s+bilan\s+qutla\w*\b",
+    r"(?i)\btavallud\s+ayyomi\b",
+]
+
+COMPILED_UNWANTED_REGEX = [re.compile(p) for p in UNWANTED_NEWS_PATTERNS]
+
+
+def is_news_worthy(title: str, body: str = "") -> bool:
+    """
+    Quality gatekeeper: Filters out dry bureaucratic notices (PhD defenses,
+    tenders, vacancies, obituaries) to ensure content matches Kun.uz / Zamon.uz standards.
+    """
+    combined = f"{title or ''} {body or ''}"
+    for pat in COMPILED_UNWANTED_REGEX:
+        if pat.search(combined):
+            return False
+    # Check minimum length (must be substantive news)
+    if len((title or "").strip()) < 10:
+        return False
+    return True
+
 
 def is_russian_text(text: str) -> bool:
     """Detects if text is in Russian language (Cyrillic or transliterated)."""
@@ -310,3 +363,61 @@ def prepare_article_text(raw_text: str, title: str = "") -> Tuple[str, str]:
     """
     _, new_uzbek_body, content_hash = prepare_article_full(raw_text, title)
     return new_uzbek_body, content_hash
+
+
+def format_telegram_post(headline: str, body: str) -> str:
+    """
+    Formats headline and body into professional Kun.uz / Zamon.uz Telegram channel format.
+    Ensures:
+    1. Punchy bold headline at top: **Sarlavha**
+    2. Zero headline repetition: If the opening sentence of body repeats the headline
+       or shares 3+ keywords with it, it is cleanly removed so the narrative flows naturally.
+    3. Proper paragraph separation and 2026 New Uzbek Latin Alphabet (Ö, Ğ, Ş, Ç).
+    4. Clean ROVON.UZ branding footer: 🔗 @rovonuz — Voqealar ravon, axborot aniq.
+    """
+    headline = (headline or "").strip()
+    headline = convert_to_new_uzbek_alphabet(headline)
+    # Strip any markdown bold/italic or hashtags from headline
+    headline = re.sub(r'[*_#]', '', headline).strip()
+
+    body = (body or "").strip()
+    # Remove any existing footers or hashtags to avoid duplicate mentions
+    body = re.sub(r'(?i)\n*🔗\s*@rovonuz[^\n]*', '', body)
+    body = re.sub(r'(?i)\n*#rovon_uz\b[^\n]*', '', body)
+    body = convert_to_new_uzbek_alphabet(body).strip()
+
+    # Paragraphs breakdown
+    paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
+
+    # Extract clean keywords from headline (words > 3 chars)
+    hl_words = [w.lower() for w in re.sub(r'[^\w\s]', '', headline.lower()).split() if len(w) > 3]
+
+    clean_paragraphs = []
+    dropped_lead = False
+
+    for i, para in enumerate(paragraphs):
+        # Check first paragraph for duplicate lead sentence
+        if i == 0 and hl_words:
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) > 5]
+            clean_sents = []
+            for s_idx, sent in enumerate(sentences):
+                if s_idx == 0 and not dropped_lead:
+                    sent_words = [w.lower() for w in re.sub(r'[^\w\s]', '', sent.lower()).split() if len(w) > 3]
+                    overlap = sum(1 for w in hl_words if w in sent_words)
+                    # If sentence 0 shares >= 2 significant words or >= 35% of headline words, drop it
+                    if overlap >= 2 or (len(hl_words) > 0 and (overlap / len(hl_words)) >= 0.35):
+                        dropped_lead = True
+                        continue
+                clean_sents.append(sent)
+            if clean_sents:
+                clean_paragraphs.append(" ".join(clean_sents))
+        else:
+            clean_paragraphs.append(para)
+
+    clean_body = "\n\n".join(clean_paragraphs).strip()
+    if not clean_body or len(clean_body) < 15:
+        clean_body = body
+
+    footer = "🔗 @rovonuz — Voqealar ravon, axborot aniq."
+    return f"**{headline}**\n\n{clean_body}\n\n{footer}"
+

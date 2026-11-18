@@ -54,29 +54,39 @@ class RovonEditor:
         # Split body into coherent sentences
         sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_body) if len(s.strip()) > 15]
 
-        # Clean and validate headline
+        # Clean and validate headline (Kun.uz / Zamon.uz standard)
         clean_title = re.sub(r'^[#@\w\s_]*[❗️⚡️🔴⚖️🔰📢📌🔹🔸🔺🔷🔶👉✅❌❓👇]+\s*', '', title or '').strip()
         clean_title = re.sub(r'[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f900-\U0001f9ff]+', '', clean_title).strip()
+        # Clean bureaucratic fluff
+        clean_title = re.sub(r'(?i)\s+t[oö\'ʻ‘`]?g[\'ʻ‘`]?risida.*$', '', clean_title).strip()
+        clean_title = re.sub(r'(?i)\s+haqida.*$', '', clean_title).strip()
+        clean_title = re.sub(r'(?i)\s+xabari.*$', '', clean_title).strip()
 
         if len(clean_title) >= 15:
-            headline = clean_title
+            headline = clean_title[:75]
         elif sentences:
-            headline = sentences[0][:80]
+            headline = sentences[0][:75]
         else:
             headline = "Muhim rasmiy axborot"
 
-        # Determine lead without duplicating headline
-        lead = sentences[0] if sentences else headline
-        if sentences and (headline.lower() in lead.lower() or lead.lower() in headline.lower()):
-            if len(sentences) > 1:
-                body_middle = " ".join(sentences[1:3])
-                conclusion = sentences[3] if len(sentences) > 3 else ""
-            else:
-                body_middle = ""
-                conclusion = ""
-        else:
-            body_middle = " ".join(sentences[1:3]) if len(sentences) > 1 else ""
-            conclusion = sentences[3] if len(sentences) > 3 else ""
+        # Filter duplicate headline from body lead
+        body_sentences = []
+        hl_words = [w.lower() for w in re.sub(r'[^\w\s]', '', headline).split() if len(w) > 3]
+        for s in sentences:
+            s_clean = s.strip()
+            s_words = [w.lower() for w in re.sub(r'[^\w\s]', '', s_clean).split() if len(w) > 3]
+            overlap = sum(1 for w in hl_words if w in s_words)
+            # If the sentence repeats 3 or more words of the headline, skip as body lead
+            if overlap >= 3 and len(body_sentences) == 0:
+                continue
+            body_sentences.append(s_clean)
+
+        if not body_sentences:
+            body_sentences = sentences
+
+        lead = body_sentences[0] if body_sentences else headline
+        body_middle = " ".join(body_sentences[1:3]) if len(body_sentences) > 1 else ""
+        conclusion = body_sentences[3] if len(body_sentences) > 3 else ""
 
         # Construct clean journalistic post (ONE headline at the top, clean body paragraphs)
         post_lines = [
@@ -87,7 +97,7 @@ class RovonEditor:
         if conclusion:
             post_lines.extend(["", f"ℹ️ _{conclusion}_"])
 
-        post_lines.extend(["", "🔗 @rovonuz — Tezkor va ishonchli axborot"])
+        post_lines.extend(["", "🔗 @rovonuz — Voqealar ravon, axborot aniq."])
 
         telegram_text = "\n".join(post_lines)
 
@@ -128,17 +138,19 @@ class RovonEditor:
         client = genai.Client(api_key=self.gemini_key)
 
         prompt = f"""
-Sen ROVON.UZ ning yetakchi Bosh Muharriri (AI-3: EDITOR)san.
-Taqdim etilgan tasdiqlangan faktlar asosida Telegram kanali uchun yuqori darajadagi professional yangilik tayyorla.
+Sen ROVON.UZ ning yetakchi Bosh Muharriri (AI-3: EDITOR)san. Uslubing — Kun.uz, Daryo.uz va Zamon.uz kabi eng ommabop, qiziqarli, zamonaviy va professional yangiliklar darajasida bo'lsin.
 
 QAT'IY QOIDALAR:
 1. ZERO DISTORTION: Birorta raqam, ism, joy yoki sanani O'ZGARTIRMA, yangi fakt to'qima.
 2. YANGI O'ZBEK LOTIN ALIFBOSI (2026): Barcha matnlarni qat'iy ravishda Yangi Lotin alifbosida (Ö ö, Ğ ğ, Ş ş, Ç ç) yoz. Eskirgan Sh, Ch, O', G' larni umuman ishlatma!
-3. STRUKTURA: 
-   - headline_selected: Aniq, lo'nda va nufuzli sarlavha (hech qanday emojisiz, max 90 belgi).
-   - telegram_clean_text: 2-3 ta tushunarli abzats. Ichida sarlavhani takrorlama! Faqat yangilik mazmuni. Oxirgi qatorda "🔗 @rovonuz — Tezkor va ishonchli axborot" bo'lsin.
-   - Hech qanday emoji spam (masalan: 😎 yoki ❗️ ketma-ketligi) yoki kanal heshteglari qo'shma.
-4. headline_alternatives: 3 ta sifatli sarlavha varianti.
+3. KUN.UZ / ZAMON USLUBIDAGI SARLAVHA: Sarlavha qisqa (max 70 belgi), jozibador va voqea mohiyatini ochuvchi bo'lsin. Byurokratik rasmiyatchilik, ota ismlari yoki "to'g'risida" kabi so'zlarni sarlavhaga qo'yma!
+4. MATN STRUKTURASI (Zero Repetition):
+   - 1-abzats: Lead (voqeaning asosiy mohiyati: nima bo'ldi, qayerda bo'ldi). SARLAVHANI AYNAN TAKRORLAMA!
+   - 2-abzats: Tafsilotlar (sabablar, rasmiy idora bayonoti, raqamlar yoki statistika).
+   - 3-abzats: Xulosa yoki oqibati.
+   - Oxirgi qatorda: "🔗 @rovonuz — Voqealar ravon, axborot aniq." bo'lsin.
+5. Hech qanday emoji spam (masalan: 😎 yoki ❗️ ketma-ketligi) yoki ortiqcha heshteg qo'shma.
+6. headline_alternatives: 3 ta sifatli sarlavha varianti.
 
 Sarlavha: {title}
 Kategoriya: {category}

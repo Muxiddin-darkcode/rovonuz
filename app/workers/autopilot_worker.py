@@ -288,11 +288,21 @@ class AutoPilotWorker:
             from app.telegram_gateway.bot_service import bot
             from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
             from aiogram.enums import ParseMode
-            from app.ingestion.sanitizer import is_russian_text, translate_to_uzbek, convert_to_new_uzbek_alphabet
+            from app.ingestion.sanitizer import (
+                is_russian_text, translate_to_uzbek, convert_to_new_uzbek_alphabet,
+                is_news_worthy, format_telegram_post
+            )
             from app.media_studio.canvas_generator import canvas_generator
 
             headline = (editorial.headline_selected or "").strip()
             body = (editorial.telegram_clean_text or "").strip()
+
+            # 1. Quality Gate: Reject bureaucratic spam, dissertations, tenders, obituaries
+            if not is_news_worthy(headline, body):
+                print(f"[AutoPublisher Filter] Dropped non-news notice: {headline[:60]}", flush=True)
+                item.dispatch_status = "CANCELLED"
+                await session.commit()
+                return False
 
             # Ensure 100% natural Uzbek language & 2026 New Uzbek Latin Alphabet
             if is_russian_text(headline):
@@ -303,12 +313,8 @@ class AutoPilotWorker:
             headline = convert_to_new_uzbek_alphabet(headline)
             body = convert_to_new_uzbek_alphabet(body)
 
-            norm_hl = re.sub(r'[*_#]', '', headline).strip().lower()
-            norm_body_start = re.sub(r'[*_#]', '', body[:len(headline) + 25]).strip().lower()
-            if norm_hl and norm_body_start.startswith(norm_hl[:30]):
-                post_text = f"{body}\n\n#ROVON_UZ"
-            else:
-                post_text = f"**{headline}**\n\n{body}\n\n#ROVON_UZ"
+            # Professional Kun.uz / Zamon.uz formatting: Zero headline duplication
+            post_text = format_telegram_post(headline, body)
 
             channel_id = settings.TELEGRAM_CHANNEL_ID
             channel_btn = InlineKeyboardMarkup(
