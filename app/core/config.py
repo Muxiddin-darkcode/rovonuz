@@ -31,16 +31,16 @@ class Settings(BaseSettings):
     # Search API
     TAVILY_API_KEY: Optional[str] = None
     GOOGLE_SEARCH_API_KEY: Optional[str] = None
-    GOOGLE_SEARCH_CX: Optional[str] = None
+    GOOGLE_SEARCH_CX: Optional[str] = "96c039b9170014dfb"
 
     # Telegram Bot & Channel
-    TELEGRAM_BOT_TOKEN: Optional[str] = None
+    TELEGRAM_BOT_TOKEN: Optional[str] = "9049199063:AAHmxj-IcQWjrg29oafEOCAWifbt0ZT0hXg"
     TELEGRAM_CHANNEL_ID: str = "@rovonuz"
-    TELEGRAM_ADMIN_CHAT_ID: Optional[int] = None
+    TELEGRAM_ADMIN_CHAT_ID: Optional[int] = 6648563749
 
     # Telethon MTProto Observer
-    TELEGRAM_API_ID: Optional[int] = None
-    TELEGRAM_API_HASH: Optional[str] = None
+    TELEGRAM_API_ID: Optional[int] = 33123366
+    TELEGRAM_API_HASH: Optional[str] = "c99f1dd99e0a385a8191237b7c1ab1a9"
     TELEGRAM_SESSION_NAME: str = "rovon_observer_session"
 
     @field_validator("TELEGRAM_API_ID", "TELEGRAM_ADMIN_CHAT_ID", mode="before")

@@ -61,10 +61,10 @@ from app.ai_brain.ai1_investigator.investigator import RovonInvestigator
 from app.ai_brain.ai2_auditor.auditor import RovonAuditor
 
 
-# Initialize Bot with Markdown formatting
+# Initialize Bot with HTML formatting
 bot = Bot(
     token=settings.TELEGRAM_BOT_TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN)
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 dp = Dispatcher()
 orchestrator = PipelineOrchestrator()
