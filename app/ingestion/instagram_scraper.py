@@ -30,7 +30,7 @@ class InstagramPublicScraper:
     Designed with rate-limit evasion and resilient parsing.
     """
 
-    def __init__(self, timeout: float = 15.0):
+    def __init__(self, timeout: float = 4.0):
         self.timeout = timeout
 
     async def fetch_profile_posts(self, username: str, limit: int = 5) -> List[Dict]:

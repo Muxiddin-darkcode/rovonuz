@@ -165,14 +165,23 @@ class AutoPilotWorker:
 
     async def _run_publisher_loop(self):
         """Continuous background loop that automatically dispatches due articles to Telegram."""
+        # Initial 10s grace period on startup
+        await asyncio.sleep(10)
         while self.is_active:
+            dispatched = False
             try:
                 if not system_state.IS_EMERGENCY_STOP_ACTIVE and self.auto_publish_enabled:
-                    await self.execute_auto_publish_cycle()
+                    dispatched = await self.execute_auto_publish_cycle()
             except Exception as e:
                 print(f"[AutoPublisher Exception] Publish cycle error: {e}", flush=True)
 
-            await asyncio.sleep(self.publish_interval_seconds)
+            if dispatched:
+                # Successfully sent post: strictly wait 10 minutes before next post
+                print(f"[AutoPublisher] Cooldown active: waiting {self.publish_interval_seconds // 60} min ({self.publish_interval_seconds}s) before next auto-post...", flush=True)
+                await asyncio.sleep(self.publish_interval_seconds)
+            else:
+                # Queue was empty or waiting for harvester: poll again in 20 seconds
+                await asyncio.sleep(20)
 
     async def execute_scan_cycle(self) -> Dict[str, int]:
         """
@@ -264,132 +273,137 @@ class AutoPilotWorker:
         from app.db.session import AsyncSessionLocal
         from app.db.models.publishing import AI4PublishingQueue
         from app.db.models.editorial import AI3Editorial
+        from app.telegram_gateway.bot_service import bot
+        from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
+        from aiogram.enums import ParseMode
+        from app.ingestion.sanitizer import (
+            is_russian_text, translate_to_uzbek, convert_to_new_uzbek_alphabet,
+            is_news_worthy, format_telegram_post
+        )
+        from app.media_studio.canvas_generator import canvas_generator
 
         now = datetime.now(timezone.utc)
         async with AsyncSessionLocal() as session:
-            # Select the ABSOLUTE NEWEST waiting post in queue
-            stmt = (
-                select(AI4PublishingQueue)
-                .join(AI3Editorial, AI4PublishingQueue.editorial_id == AI3Editorial.id)
-                .filter(AI4PublishingQueue.dispatch_status == "WAITING")
-                .order_by(AI3Editorial.created_at.desc())
-                .limit(1)
-            )
-            item = (await session.execute(stmt)).scalars().first()
-            if not item:
-                return False
+            # Loop until we find a valid, news-worthy post or queue is exhausted
+            while True:
+                stmt = (
+                    select(AI4PublishingQueue)
+                    .join(AI3Editorial, AI4PublishingQueue.editorial_id == AI3Editorial.id)
+                    .filter(AI4PublishingQueue.dispatch_status == "WAITING")
+                    .order_by(AI3Editorial.created_at.desc())
+                    .limit(1)
+                )
+                item = (await session.execute(stmt)).scalars().first()
+                if not item:
+                    return False
 
-            editorial = await session.get(AI3Editorial, item.editorial_id)
-            if not editorial:
-                item.dispatch_status = "FAILED"
-                await session.commit()
-                return False
-
-            from app.telegram_gateway.bot_service import bot
-            from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton
-            from aiogram.enums import ParseMode
-            from app.ingestion.sanitizer import (
-                is_russian_text, translate_to_uzbek, convert_to_new_uzbek_alphabet,
-                is_news_worthy, format_telegram_post
-            )
-            from app.media_studio.canvas_generator import canvas_generator
-
-            headline = (editorial.headline_selected or "").strip()
-            body = (editorial.telegram_clean_text or "").strip()
-
-            # 1. Quality Gate: Reject bureaucratic spam, dissertations, tenders, obituaries
-            if not is_news_worthy(headline, body):
-                print(f"[AutoPublisher Filter] Dropped non-news notice: {headline[:60]}", flush=True)
-                item.dispatch_status = "CANCELLED"
-                await session.commit()
-                return False
-
-            # Ensure 100% natural Uzbek language & 2026 New Uzbek Latin Alphabet
-            if is_russian_text(headline):
-                headline = translate_to_uzbek(headline)
-            if is_russian_text(body):
-                body = translate_to_uzbek(body)
-
-            headline = convert_to_new_uzbek_alphabet(headline)
-            body = convert_to_new_uzbek_alphabet(body)
-
-            # Professional Kun.uz / Zamon.uz formatting: Zero headline duplication
-            post_text = format_telegram_post(headline, body)
-
-            channel_id = settings.TELEGRAM_CHANNEL_ID
-            channel_btn = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="🌐 ROVON.UZ | Rasmiy Sahifa", url="https://rovon.uz")]]
-            )
-
-            published = False
-            card_path = editorial.generated_card_url
-            if not card_path or not os.path.exists(card_path) or is_russian_text(editorial.headline_selected):
-                os.makedirs("storage/cards", exist_ok=True)
-                card_filename = f"storage/cards/pub_{item.id}_{int(now.timestamp())}.jpg"
-                try:
-                    card_path = canvas_generator.generate_news_card(
-                        headline=headline,
-                        summary_text=body,
-                        badge_text=convert_to_new_uzbek_alphabet(editorial.card_badge_text or "YANGILIK"),
-                        output_path=card_filename
-                    )
-                    editorial.generated_card_url = card_path
-                    editorial.headline_selected = headline
-                    editorial.telegram_clean_text = body
+                editorial = await session.get(AI3Editorial, item.editorial_id)
+                if not editorial:
+                    item.dispatch_status = "FAILED"
                     await session.commit()
-                except Exception as e:
-                    print(f"[AutoPublisher Card Error] {e}")
-            try:
-                if card_path and os.path.exists(card_path):
-                    photo = FSInputFile(card_path)
-                    try:
-                        await bot.send_photo(
-                            chat_id=channel_id,
-                            photo=photo,
-                            caption=post_text[:1024],
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=channel_btn
-                        )
-                    except Exception as send_err:
-                        print(f"[AutoPublisher HTML send error] {send_err}, trying plain text fallback...", flush=True)
-                        photo = FSInputFile(card_path)
-                        clean_plain = re.sub(r'<[^>]+>', '', post_text)[:1024]
-                        await bot.send_photo(
-                            chat_id=channel_id,
-                            photo=photo,
-                            caption=clean_plain,
-                            parse_mode=None,
-                            reply_markup=channel_btn
-                        )
-                else:
-                    try:
-                        await bot.send_message(
-                            chat_id=channel_id,
-                            text=post_text[:4096],
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=channel_btn,
-                            disable_web_page_preview=False
-                        )
-                    except Exception:
-                        clean_plain = re.sub(r'<[^>]+>', '', post_text)[:4096]
-                        await bot.send_message(
-                            chat_id=channel_id,
-                            text=clean_plain,
-                            parse_mode=None,
-                            reply_markup=channel_btn,
-                            disable_web_page_preview=False
-                        )
-                published = True
-                self.total_dispatched_articles += 1
-                print(f"[AutoPublisher] Published NEWEST post to {channel_id}: '{headline[:60]}...'. Next auto-publish in {self.publish_interval_seconds // 60} minutes.", flush=True)
-            except Exception as e:
-                print(f"[AutoPublisher Error] Failed sending to {channel_id}: {e}", flush=True)
+                    continue
 
-            if published:
-                item.dispatch_status = "DISPATCHED"
-                item.dispatched_at = datetime.now(timezone.utc)
-                await session.commit()
-                return True
+                headline = (editorial.headline_selected or "").strip()
+                body = (editorial.telegram_clean_text or "").strip()
+
+                # 1. Quality Gate: Reject bureaucratic spam, dissertations, tenders, obituaries
+                if not is_news_worthy(headline, body):
+                    print(f"[AutoPublisher Filter] Dropped non-news notice: {headline[:60]}", flush=True)
+                    item.dispatch_status = "CANCELLED"
+                    await session.commit()
+                    continue
+
+                # Ensure 100% natural Uzbek language & 2026 New Uzbek Latin Alphabet
+                if is_russian_text(headline):
+                    headline = translate_to_uzbek(headline)
+                if is_russian_text(body):
+                    body = translate_to_uzbek(body)
+
+                headline = convert_to_new_uzbek_alphabet(headline)
+                body = convert_to_new_uzbek_alphabet(body)
+
+                # Professional Kun.uz / Zamon.uz formatting: Zero headline duplication
+                post_text = format_telegram_post(headline, body)
+
+                channel_id = settings.TELEGRAM_CHANNEL_ID
+                channel_btn = InlineKeyboardMarkup(
+                    inline_keyboard=[[InlineKeyboardButton(text="🌐 ROVON.UZ | Rasmiy Sahifa", url="https://rovon.uz")]]
+                )
+
+                published = False
+                card_path = editorial.generated_card_url
+                if not card_path or not os.path.exists(card_path) or is_russian_text(editorial.headline_selected):
+                    os.makedirs("storage/cards", exist_ok=True)
+                    card_filename = f"storage/cards/pub_{item.id}_{int(now.timestamp())}.jpg"
+                    try:
+                        card_path = canvas_generator.generate_news_card(
+                            headline=headline,
+                            summary_text=body,
+                            badge_text=convert_to_new_uzbek_alphabet(editorial.card_badge_text or "YANGILIK"),
+                            output_path=card_filename
+                        )
+                        editorial.generated_card_url = card_path
+                        editorial.headline_selected = headline
+                        editorial.telegram_clean_text = body
+                        await session.commit()
+                    except Exception as e:
+                        print(f"[AutoPublisher Card Error] {e}")
+
+                try:
+                    if card_path and os.path.exists(card_path):
+                        photo = FSInputFile(card_path)
+                        try:
+                            await bot.send_photo(
+                                chat_id=channel_id,
+                                photo=photo,
+                                caption=post_text[:1024],
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=channel_btn
+                            )
+                        except Exception as send_err:
+                            print(f"[AutoPublisher HTML send error] {send_err}, trying plain text fallback...", flush=True)
+                            photo = FSInputFile(card_path)
+                            clean_plain = re.sub(r'<[^>]+>', '', post_text)[:1024]
+                            await bot.send_photo(
+                                chat_id=channel_id,
+                                photo=photo,
+                                caption=clean_plain,
+                                parse_mode=None,
+                                reply_markup=channel_btn
+                            )
+                    else:
+                        try:
+                            await bot.send_message(
+                                chat_id=channel_id,
+                                text=post_text[:4096],
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=channel_btn,
+                                disable_web_page_preview=False
+                            )
+                        except Exception:
+                            clean_plain = re.sub(r'<[^>]+>', '', post_text)[:4096]
+                            await bot.send_message(
+                                chat_id=channel_id,
+                                text=clean_plain,
+                                parse_mode=None,
+                                reply_markup=channel_btn,
+                                disable_web_page_preview=False
+                            )
+                    published = True
+                    self.total_dispatched_articles += 1
+                    print(f"[AutoPublisher] Published post to {channel_id}: '{headline[:60]}...'. Next auto-publish in {self.publish_interval_seconds // 60} minutes.", flush=True)
+                except Exception as e:
+                    print(f"[AutoPublisher Error] Failed sending to {channel_id}: {e}", flush=True)
+
+                if published:
+                    item.dispatch_status = "DISPATCHED"
+                    item.dispatched_at = datetime.now(timezone.utc)
+                    await session.commit()
+                    return True
+                else:
+                    item.dispatch_status = "FAILED"
+                    await session.commit()
+                    continue
 
         return False
 
