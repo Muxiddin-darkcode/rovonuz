@@ -18,10 +18,35 @@ from app.workers.autopilot_worker import autopilot_service
 from app.telegram_gateway.bot_service import dp, bot, setup_bot_commands
 
 
+async def start_render_health_server():
+    """Binds to Render's dynamic $PORT to pass Web Service health checks."""
+    port_str = os.getenv("PORT")
+    if not port_str:
+        return
+    try:
+        from aiohttp import web
+        app = web.Application()
+        async def health(request):
+            return web.Response(text="ROVON.UZ Newsroom Daemon Running OK", content_type="text/plain")
+        app.router.add_get("/", health)
+        app.router.add_get("/health", health)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        port = int(port_str)
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        print(f"[Render Server] Health check server listening on port {port}", flush=True)
+    except Exception as e:
+        print(f"[Render Server Warning] Could not start health server: {e}", flush=True)
+
+
 async def run_newsroom_daemon():
     print("=" * 60)
     print("ROVON.UZ — 100% TELEGRAM AI MEDIA NEWSROOM")
     print("=" * 60, flush=True)
+
+    # 0. Start Render HTTP Health Server if $PORT is provided
+    await start_render_health_server()
 
     # 1. Initialize Storage & Database
     os.makedirs("storage/cards", exist_ok=True)
