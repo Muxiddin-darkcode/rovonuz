@@ -41,23 +41,41 @@ class CanvasGenerator:
 
     def _get_font(self, font_type: str, size: int) -> ImageFont.ImageFont:
         """Loads requested font with fallbacks."""
+        base_dir = os.path.dirname(__file__)
+        templates_fonts = os.path.join(base_dir, "templates", "fonts")
+
         candidates = []
         if font_type == "bold_italic":
             candidates = [
+                os.path.join(templates_fonts, "segoeuiz.ttf"),
+                os.path.join(templates_fonts, "arialbi.ttf"),
+                os.path.join(templates_fonts, "Inter-Bold.ttf"),
                 "C:/Windows/Fonts/segoeuiz.ttf",
                 "C:/Windows/Fonts/arialbi.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-BoldItalic.ttf",
                 settings.FONT_PATH_BOLD,
             ]
         elif font_type == "bold":
             candidates = [
+                os.path.join(templates_fonts, "segoeuib.ttf"),
+                os.path.join(templates_fonts, "arialbd.ttf"),
+                os.path.join(templates_fonts, "Inter-Bold.ttf"),
                 "C:/Windows/Fonts/segoeuib.ttf",
                 "C:/Windows/Fonts/arialbd.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
                 settings.FONT_PATH_BOLD,
             ]
         else:
             candidates = [
+                os.path.join(templates_fonts, "segoeui.ttf"),
+                os.path.join(templates_fonts, "arial.ttf"),
+                os.path.join(templates_fonts, "Inter-Regular.ttf"),
                 "C:/Windows/Fonts/segoeui.ttf",
                 "C:/Windows/Fonts/arial.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
                 settings.FONT_PATH_REGULAR,
             ]
 
@@ -67,7 +85,10 @@ class CanvasGenerator:
                     return ImageFont.truetype(p, size)
                 except Exception:
                     continue
-        return ImageFont.load_default()
+        try:
+            return ImageFont.load_default(size=size)
+        except Exception:
+            return ImageFont.load_default()
 
     def generate_news_card(
         self,
@@ -102,9 +123,9 @@ class CanvasGenerator:
         f_logo = self._get_font("bold_italic", 44)
         f_logo_badge = self._get_font("bold_italic", 34)
         f_slogan = self._get_font("bold", 16)
-        f_category = self._get_font("bold", 24)
-        f_headline = self._get_font("bold_italic", 46)
-        f_body = self._get_font("bold", 30)
+        f_category = self._get_font("bold", 26)
+        f_headline = self._get_font("bold_italic", 50)
+        f_body = self._get_font("bold", 34)
         f_footer = self._get_font("bold", 24)
 
         # ======================================================================
@@ -187,17 +208,27 @@ class CanvasGenerator:
         draw.line([(slash_x, 688), (slash_x + 14, 642)], fill=self.WHITE, width=4)
         draw.line([(slash_x + 12, 688), (slash_x + 26, 642)], fill=self.RED, width=4)
 
-        # Left slanted vertical red accent bar
-        draw.polygon([(65, 715), (78, 715), (58, 885), (45, 885)], fill=self.RED)
-
         # Wrap and draw uppercase bold italic headline
         hl_clean = headline.upper().strip()
         wrapped_hl = self._wrap_text(hl_clean, f_headline, max_width=920, draw=draw)[:3]
 
+        # Dynamic left slanted vertical red accent bar matching headline height
+        line_height = 62
+        hl_lines_count = max(1, len(wrapped_hl))
+        bar_top = 712
+        bar_bottom = bar_top + (hl_lines_count * line_height) - 10
+        slant = 14
+        draw.polygon([
+            (65, bar_top),
+            (78, bar_top),
+            (78 - slant, bar_bottom),
+            (65 - slant, bar_bottom)
+        ], fill=self.RED)
+
         hl_y = 712
         for line in wrapped_hl:
             draw.text((95, hl_y), line, font=f_headline, fill=self.WHITE)
-            hl_y += 58
+            hl_y += line_height
 
         # ======================================================================
         # 4. WHITE DETAILS CARD (Y: 920 to 1230)
@@ -211,17 +242,19 @@ class CanvasGenerator:
         icon_type = self._detect_icon_type(f"{headline} {summary_text} {badge_text}")
         self._draw_vector_icon(draw, icon_type, (60, 955, 175, 1070), self.WHITE)
 
-        # Vertical red divider line
-        draw.line([(205, 960), (205, 1065)], fill=self.RED, width=3)
-
         # Extract 1-2 clean summary sentences
         clean_sum = self._prepare_summary_text(summary_text, headline)
-        wrapped_sum = self._wrap_text(clean_sum, f_body, max_width=800, draw=draw)[:4]
+        wrapped_sum = self._wrap_text(clean_sum, f_body, max_width=790, draw=draw)[:4]
+
+        # Vertical red divider line matching text content height
+        sum_line_height = 42
+        total_sum_h = max(115, len(wrapped_sum) * sum_line_height + 10)
+        draw.line([(205, 955), (205, 955 + total_sum_h)], fill=self.RED, width=3)
 
         sy = 955
         for sl in wrapped_sum:
             draw.text((230, sy), sl, font=f_body, fill=self.DARK_TEXT)
-            sy += 38
+            sy += sum_line_height
 
         # ======================================================================
         # 5. FOOTER (Y: 1230 to 1350)
