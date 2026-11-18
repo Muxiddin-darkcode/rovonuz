@@ -1117,18 +1117,29 @@ async def cb_handle_audit(callback: CallbackQuery):
             return
 
         if "approve" in action:
-            audit.human_approved_at = datetime.now(timezone.utc)
-            await session.commit()
-            await orchestrator.approve_and_schedule_audit(audit.id)
-            await callback.answer("Xabar ma'qullandi va navbatga qo'yildi!", show_alert=True)
+            try:
+                res = await orchestrator.approve_and_schedule_audit(audit.id)
+                if res.get("status") == "scheduled":
+                    await callback.answer("✅ Xabar ma'qullandi va nashr navbatiga qo'yildi!", show_alert=True)
+                else:
+                    await callback.answer(f"⚠️ Xatolik: {res.get('message', 'Noma\'lum')}", show_alert=True)
+            except Exception as e:
+                print(f"[Audit Approval Error] {e}", flush=True)
+                await callback.answer(f"❌ Xatolik yuz berdi: {str(e)[:60]}", show_alert=True)
         elif "reject" in action:
             audit.human_approved_at = None
             audit.human_gate_required = False
             audit.risk_tier = "REJECTED"
             await session.commit()
-            await callback.answer("Xabar rad etildi va arxivlandi.", show_alert=True)
+            await callback.answer("❌ Xabar rad etildi va arxivlandi.", show_alert=True)
 
-    await send_audits_view(callback, is_callback=True)
+    if action in ["approve", "reject"]:
+        await send_audits_view(callback, is_callback=True)
+    elif action in ["approve_by_art", "reject_by_art"]:
+        try:
+            await safe_edit_target(callback, "✅ **Qaror qabul qilindi.**\nXabar ko'rib chiqildi va navbatga yo'naltirildi.")
+        except Exception:
+            pass
 
 
 # ==============================================================================

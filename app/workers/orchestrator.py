@@ -267,11 +267,13 @@ class PipelineOrchestrator:
             if not raw_article:
                 return {"status": "error", "message": "Article not found"}
 
-            # Reconstruct AuditResult
+            # Reconstruct AuditResult with all required fields
             audit_result = AuditResult(
-                verdict=audit.verdict,
-                bayesian_score=audit.bayesian_score,
-                risk_tier=audit.risk_tier,
+                investigation_id=str(investigation.id),
+                audit_summary=f"Inson tasdig'i: Ma'qullandi ({audit.verdict}). Xavf: {audit.risk_tier}, Ball: {audit.bayesian_score:.2f}",
+                verdict=audit.verdict or "VERIFIED",
+                bayesian_score=audit.bayesian_score if audit.bayesian_score is not None else 1.0,
+                risk_tier=audit.risk_tier or "LEVEL_1_LOW",
                 discrepancies=[],
                 human_gate_required=False,
             )
@@ -300,6 +302,14 @@ class PipelineOrchestrator:
                             if resp.status_code == 200:
                                 with open(temp_download, "wb") as f:
                                     f.write(resp.content)
+                                try:
+                                    from PIL import Image as PILImage
+                                    with PILImage.open(temp_download) as test_img:
+                                        w, h = test_img.size
+                                        if w < 350 or h > 1.25 * w:
+                                            temp_download = None
+                                except Exception:
+                                    pass
                             else:
                                 temp_download = None
                         except Exception:
@@ -360,6 +370,9 @@ class PipelineOrchestrator:
                 dispatch_status="WAITING",
                 idempotency_key=schedule_decision.idempotency_key,
             )
+            audit.human_approved_at = datetime.now(timezone.utc)
+            audit.human_gate_required = False
+            session.add(audit)
             session.add(ai4_record)
             await session.commit()
 
