@@ -339,18 +339,41 @@ class CanvasGenerator:
             draw.polygon([(cx - 16, cy + 12), (cx - 10, cy + 12), (cx - 14, cy + 28), (cx - 20, cy + 26)], fill=color)
 
     def _prepare_summary_text(self, summary_text: str, headline: str) -> str:
-        """Cleans and extracts 1-2 coherent sentences for the white details card."""
-        clean = re.sub(r'[*_#@🔗]', '', summary_text).strip()
-        # Remove headline if duplicated
-        clean = re.sub(re.escape(headline), '', clean, flags=re.IGNORECASE).strip()
-        # Split into sentences
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean) if len(s.strip()) > 20]
-        if sentences:
-            selected = " ".join(sentences[:2])
-            if len(selected) > 220:
-                selected = selected[:217] + "..."
-            return selected
-        return clean[:180] + ("..." if len(clean) > 180 else "")
+        """Cleans and extracts 1-2 complete sentences for the white details card, always ending with a period."""
+        clean = re.sub(r'[*_#@🔗]', '', summary_text or "").strip()
+        # Remove headline from beginning of summary if duplicated
+        clean = re.sub(r'^\s*' + re.escape(headline) + r'[:\s.-]*', '', clean, flags=re.IGNORECASE).strip()
+        # Remove any leftover partial word or lowercase crumbs at the beginning
+        clean = re.sub(r'^[a-zʼʻöğşç\s,.-]+(?=[A-ZÖĞŞÇ])', '', clean).strip()
+
+        # Split into clean sentences
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean) if len(s.strip()) > 10]
+        valid_sentences = []
+        for s in sentences:
+            s_clean = s.rstrip(" ,;:-")
+            if s_clean and s_clean[-1] not in ".!?":
+                s_clean += "."
+            if len(s_clean) > 15:
+                valid_sentences.append(s_clean)
+
+        if not valid_sentences:
+            c = clean.rstrip(" ,;:-")
+            return c + ("." if c and c[-1] not in ".!?" else "")
+
+        # Take up to 2 full sentences that fit comfortably in card (max ~220 chars total)
+        selected = []
+        total_len = 0
+        for s in valid_sentences:
+            if total_len + len(s) <= 220 or len(selected) == 0:
+                selected.append(s)
+                total_len += len(s)
+            else:
+                break
+
+        res = " ".join(selected).strip().rstrip(" ,;:-")
+        if res and res[-1] not in ".!?":
+            res += "."
+        return res
 
     def _wrap_text(self, text: str, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
         """Wraps text into lines based on pixel width."""

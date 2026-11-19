@@ -47,42 +47,70 @@ class RovonEditor:
 
         return self._deterministic_craft(audit.investigation_id, title, clean_body, category, media_img)
 
+    def _safe_truncate(self, text: str, max_chars: int = 90) -> str:
+        """Safely trims text to max_chars without chopping words in half."""
+        text = (text or "").strip()
+        if len(text) <= max_chars:
+            return text.rstrip(".:;,- ")
+        # Find the last space before max_chars to keep words intact
+        truncated = text[:max_chars]
+        last_space = truncated.rfind(' ')
+        if last_space > 25:
+            return truncated[:last_space].rstrip(".:;,- ")
+        return truncated.rstrip(".:;,- ")
+
     def _deterministic_craft(
         self, audit_id: str, title: str, clean_body: str, category: str, media_img: Optional[str]
     ) -> EditorialPackage:
         """Deterministic formatter conforming to Telegram UX standards."""
-        # Split body into coherent sentences
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_body) if len(s.strip()) > 15]
-
         # Clean and validate headline (Kun.uz / Zamon.uz standard)
         clean_title = re.sub(r'^[#@\w\s_]*[❗️⚡️🔴⚖️🔰📢📌🔹🔸🔺🔷🔶👉✅❌❓👇]+\s*', '', title or '').strip()
         clean_title = re.sub(r'[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f900-\U0001f9ff]+', '', clean_title).strip()
-        # Clean bureaucratic fluff
         clean_title = re.sub(r'(?i)\s+t[oö\'ʻ‘`]?g[\'ʻ‘`]?risida.*$', '', clean_title).strip()
         clean_title = re.sub(r'(?i)\s+haqida.*$', '', clean_title).strip()
         clean_title = re.sub(r'(?i)\s+xabari.*$', '', clean_title).strip()
 
+        # Split body into coherent sentences ending in punctuation
+        fixed_body = re.sub(r'([a-zʼʻöğşç\d])\s+([A-ZÖĞŞÇ][a-zöğşç]{2,})', r'\1. \2', clean_body or '')
+        raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', fixed_body) if len(s.strip()) > 10]
+        sentences = []
+        for s in raw_sentences:
+            s_clean = s.rstrip(" ,;:-")
+            if s_clean and s_clean[-1] not in ".!?":
+                s_clean += "."
+            if len(s_clean) > 15:
+                sentences.append(s_clean)
+
         if len(clean_title) >= 15:
-            headline = clean_title[:75]
+            headline = self._safe_truncate(clean_title, max_chars=90)
         elif sentences:
-            headline = sentences[0][:75]
+            headline = self._safe_truncate(sentences[0], max_chars=90)
         else:
             headline = "Muhim rasmiy axborot"
 
-        # Filter duplicate headline from body lead
+        # Remove headline from beginning of body if duplicated
+        clean_body_sub = re.sub(r'^\s*' + re.escape(headline) + r'[:\s.-]*', '', clean_body or '', flags=re.IGNORECASE).strip()
+        clean_body_sub = re.sub(r'^[a-zʼʻöğşç\s,.-]+(?=[A-ZÖĞŞÇ])', '', clean_body_sub).strip()
+
+        # Re-split cleaned body
+        sub_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', clean_body_sub) if len(s.strip()) > 10]
         body_sentences = []
         hl_words = [w.lower() for w in re.sub(r'[^\w\s]', '', headline).split() if len(w) > 3]
-        for s in sentences:
-            s_clean = s.strip()
+
+        for s in sub_sentences:
+            s_clean = s.rstrip(" ,;:-")
+            if s_clean and s_clean[-1] not in ".!?":
+                s_clean += "."
             s_words = [w.lower() for w in re.sub(r'[^\w\s]', '', s_clean).split() if len(w) > 3]
             overlap = sum(1 for w in hl_words if w in s_words)
             # If the sentence repeats 3 or more words of the headline, skip as body lead
             if overlap >= 3 and len(body_sentences) == 0:
                 continue
-            body_sentences.append(s_clean)
+            if len(s_clean) > 15:
+                body_sentences.append(s_clean)
 
         if not body_sentences:
-            body_sentences = sentences
+            body_sentences = sentences if sentences else [headline + "."]
 
         # Select concise sentences for compact body (target: 200 - 380 chars)
         selected = []
@@ -96,7 +124,14 @@ class RovonEditor:
                 break
 
         if not selected:
-            selected = body_sentences[:2] if body_sentences else [headline]
+            selected = body_sentences[:2] if body_sentences else [headline + "."]
+
+        # Ensure all selected sentences end with terminal punctuation
+        for i in range(len(selected)):
+            s = selected[i].rstrip(" ,;:-")
+            if s and s[-1] not in ".!?":
+                s += "."
+            selected[i] = s
 
         if len(selected) >= 2:
             body_formatted = f"{selected[0]}\n\n" + " ".join(selected[1:])

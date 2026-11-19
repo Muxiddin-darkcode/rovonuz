@@ -316,19 +316,23 @@ def extract_clean_headline_and_body(raw_text: str, fallback_title: str = "") -> 
 
     # Candidate for headline: first meaningful line
     headline_candidate = cleaned_lines[0]
-    if len(headline_candidate) > 85:
+    if len(headline_candidate) > 90:
         words = headline_candidate.split()
         short_title = []
         for w in words:
-            if len(" ".join(short_title + [w])) <= 85:
+            if len(" ".join(short_title + [w])) <= 90:
                 short_title.append(w)
             else:
                 break
-        headline = " ".join(short_title)
+        headline = " ".join(short_title).rstrip(".:;,- ")
     else:
-        headline = headline_candidate.rstrip(".:; ")
+        headline = headline_candidate.rstrip(".:;,- ")
 
-    body = "\n\n".join(cleaned_lines)
+    # Avoid duplicating the headline in the body
+    if len(cleaned_lines) > 1:
+        body = "\n\n".join(cleaned_lines[1:])
+    else:
+        body = cleaned_lines[0]
     return headline, body
 
 
@@ -382,6 +386,7 @@ def format_telegram_post(headline: str, body: str) -> str:
     # Strip any markdown bold/italic/hashtags or surrounding quotation marks from headline
     headline = re.sub(r'[*_#]', '', headline).strip()
     headline = re.sub(r'^["“«\'ʻ‘`]+|["”»\'ʻ‘`]+$', '', headline).strip()
+    headline = headline.rstrip(".:;,- ")
 
     body = (body or "").strip()
     # Remove any existing footers, hashtags, or broken markdown tags
@@ -390,6 +395,10 @@ def format_telegram_post(headline: str, body: str) -> str:
     body = re.sub(r'(?i)ℹ️\s*_[^_]+_', '', body)
     body = re.sub(r'[*_#]', '', body)
     body = convert_to_new_uzbek_alphabet(body).strip()
+
+    # Strip headline from beginning of body if repeated
+    body = re.sub(r'^\s*' + re.escape(headline) + r'[:\s.-]*', '', body, flags=re.IGNORECASE).strip()
+    body = re.sub(r'^[a-zʼʻöğşç\s,.-]+(?=[A-ZÖĞŞÇ])', '', body).strip()
 
     # Paragraphs breakdown
     raw_paragraphs = [p.strip() for p in body.split("\n") if p.strip()]
@@ -401,19 +410,23 @@ def format_telegram_post(headline: str, body: str) -> str:
     dropped_lead = False
 
     for para in raw_paragraphs:
-        sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) > 10]
+        sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', para) if len(s.strip()) > 8]
         for sent in sents:
             sent_clean = re.sub(r'^ℹ️\s*', '', sent).strip()
             # If opening sentence repeats headline, cleanly omit it
             if not dropped_lead and hl_words:
                 sent_words = [w.lower() for w in re.sub(r'[^\w\s]', '', sent_clean.lower()).split() if len(w) > 3]
                 overlap = sum(1 for w in hl_words if w in sent_words)
-                if overlap >= 2 or (len(hl_words) > 0 and (overlap / len(hl_words)) >= 0.35):
+                if overlap >= 3 or (len(hl_words) > 0 and (overlap / len(hl_words)) >= 0.45):
                     dropped_lead = True
                     continue
-            clean_sentences.append(sent_clean)
+            sent_clean = sent_clean.rstrip(" ,;:-")
+            if sent_clean and sent_clean[-1] not in ".!?":
+                sent_clean += "."
+            if len(sent_clean) > 12:
+                clean_sentences.append(sent_clean)
 
-    # Compact selection: Target 250 - 450 characters (max 2-3 sentences)
+    # Compact selection: Target 250 - 450 characters (max 2-3 complete sentences)
     selected_sentences = []
     current_len = 0
 
@@ -427,13 +440,22 @@ def format_telegram_post(headline: str, body: str) -> str:
             break
 
     if not selected_sentences:
-        selected_sentences = clean_sentences[:2] if clean_sentences else [body[:300]]
+        if clean_sentences:
+            selected_sentences = clean_sentences[:2]
+        else:
+            c = body[:350].rstrip(" ,;:-")
+            selected_sentences = [c + ("." if c and c[-1] not in ".!?" else "")]
+
+    # Ensure all selected sentences strictly end with terminal punctuation (. ! ?)
+    for i in range(len(selected_sentences)):
+        s = selected_sentences[i].rstrip(" ,;:-")
+        if s and s[-1] not in ".!?":
+            s += "."
+        selected_sentences[i] = s
 
     # Format into 1 or 2 clean paragraphs
-    if len(selected_sentences) >= 3:
+    if len(selected_sentences) >= 2:
         clean_body = f"{selected_sentences[0]}\n\n" + " ".join(selected_sentences[1:])
-    elif len(selected_sentences) == 2:
-        clean_body = f"{selected_sentences[0]}\n\n{selected_sentences[1]}"
     else:
         clean_body = selected_sentences[0]
 
