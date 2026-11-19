@@ -112,19 +112,19 @@ class RovonEditor:
         if not body_sentences:
             body_sentences = sentences if sentences else [headline + "."]
 
-        # Select concise sentences for compact body (target: 200 - 380 chars)
+        # Select informative sentences for body (target: 350 - 550 chars, at least 2 full sentences)
         selected = []
         c_len = 0
         for s in body_sentences:
             s_clean = s.strip()
-            if c_len + len(s_clean) <= 380 or len(selected) < 1:
+            if c_len + len(s_clean) <= 520 or len(selected) < 2:
                 selected.append(s_clean)
                 c_len += len(s_clean)
             else:
                 break
 
         if not selected:
-            selected = body_sentences[:2] if body_sentences else [headline + "."]
+            selected = body_sentences[:3] if len(body_sentences) >= 3 else body_sentences
 
         # Ensure all selected sentences end with terminal punctuation
         for i in range(len(selected)):
@@ -183,10 +183,10 @@ QAT'IY QOIDALAR:
 1. ZERO DISTORTION: Birorta raqam, ism, joy yoki sanani O'ZGARTIRMA, yangi fakt to'qima.
 2. YANGI O'ZBEK LOTIN ALIFBOSI (2026): Barcha matnlarni qat'iy ravishda Yangi Lotin alifbosida (Ö ö, Ğ ğ, Ş ş, Ç ç) yoz. Eskirgan Sh, Ch, O', G' larni umuman ishlatma!
 3. KUN.UZ / ZAMON USLUBIDAGI SARLAVHA: Sarlavha qisqa (max 70 belgi), jozibador va voqea mohiyatini ochuvchi bo'lsin. Byurokratik rasmiyatchilik, ota ismlari yoki "to'g'risida" kabi so'zlarni sarlavhaga qo'yma! Sarlavha atrofida qo'shtirnoq qo'yma!
-4. IXCHAM VA RAVON MATN (Juda ko'p matn yozma! Max 350-450 belgi):
+4. MAZMUNLI, YETARLI VA RAVON MATN (Optimal: 400-550 belgi, taxminan 45-65 so'z, 2-3 ta to'liq jumla):
    - 1-abzats: Lead (voqeaning asosiy mohiyati: nima bo'ldi, qayerda bo'ldi). SARLAVHANI AYNAN TAKRORLAMA!
-   - 2-abzats: Muhim tafsilot (1-2 ta eng asosiy raqam yoki xulosasi).
-   - Hech qachon cho'zib, rasmiyatchilik qilib ulkan matn yozma. Odamlar telefonda 2-3 jumlada tushunsin.
+   - 2-abzats: Muhim tafsilotlar (asosiy sabab, natijalar, raqamlar yoki rasmiylar izohi). Matn haddan tashqari qisqa (1 ta gap) bo'lib qolmasin, har doim kamida 2-3 ta to'liq va tugallangan jumlada voqeani to'liq tushuntirsin.
+   - Har bir jumla oxiriga MAJBURIY ravishda NUQTA (.) qo'yilsin!
    - Oxirgi qatorda: "🔗 @rovonuz — Voqealar ravon, axborot aniq." bo'lsin.
 5. Hech qanday emoji spam (masalan: 😎 yoki ❗️ ketma-ketligi) yoki ortiqcha heshteg qo'shma.
 6. headline_alternatives: 3 ta sifatli sarlavha varianti.

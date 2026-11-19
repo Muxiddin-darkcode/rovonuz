@@ -426,14 +426,14 @@ def format_telegram_post(headline: str, body: str) -> str:
             if len(sent_clean) > 12:
                 clean_sentences.append(sent_clean)
 
-    # Compact selection: Target 250 - 450 characters (max 2-3 complete sentences)
+    # Optimal selection: Target 350 - 550 characters (2-3 complete, informative sentences)
     selected_sentences = []
     current_len = 0
 
     for s in clean_sentences:
         if not s:
             continue
-        if current_len + len(s) <= 450 or len(selected_sentences) < 2:
+        if current_len + len(s) <= 550 or len(selected_sentences) < 2:
             selected_sentences.append(s)
             current_len += len(s)
         else:

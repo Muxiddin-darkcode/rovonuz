@@ -360,11 +360,11 @@ class CanvasGenerator:
             c = clean.rstrip(" ,;:-")
             return c + ("." if c and c[-1] not in ".!?" else "")
 
-        # Take up to 2 full sentences that fit comfortably in card (max ~220 chars total)
+        # Take up to 2 full sentences that fit comfortably in card (max ~260 chars total)
         selected = []
         total_len = 0
         for s in valid_sentences:
-            if total_len + len(s) <= 220 or len(selected) == 0:
+            if total_len + len(s) <= 260 or len(selected) == 0:
                 selected.append(s)
                 total_len += len(s)
             else:
