@@ -133,6 +133,26 @@ class AutoPilotWorker:
         self.publish_interval_seconds = max(60, seconds)
         print(f"[AutoPublisher] Publish interval updated to {self.publish_interval_seconds}s ({self.publish_interval_seconds // 60} min).", flush=True)
 
+    def _cleanup_old_cards(self, max_files: int = 50):
+        """Keeps storage/cards clean and prevents disk exhaustion on Render."""
+        try:
+            folder = "storage/cards"
+            if not os.path.exists(folder):
+                return
+            files = []
+            for f in os.listdir(folder):
+                if f.endswith(".jpg") or f.endswith(".png"):
+                    fp = os.path.join(folder, f)
+                    files.append((fp, os.path.getmtime(fp)))
+            files.sort(key=lambda x: x[1], reverse=True)
+            for fp, _ in files[max_files:]:
+                try:
+                    os.remove(fp)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
     def get_status(self) -> Dict[str, Any]:
         return {
             "is_active": self.is_active,
@@ -399,6 +419,7 @@ class AutoPilotWorker:
                     item.dispatch_status = "DISPATCHED"
                     item.dispatched_at = datetime.now(timezone.utc)
                     await session.commit()
+                    self._cleanup_old_cards(max_files=50)
                     return True
                 else:
                     item.dispatch_status = "FAILED"
